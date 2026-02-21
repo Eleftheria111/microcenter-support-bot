@@ -33,7 +33,7 @@ def get_qa_chain():
         persist_directory='data/chroma',
         embedding_function=embeddings
     )
-    retriever = vectorstore.as_retriever(search_kwargs={'k': 4})
+    retriever = vectorstore.as_retriever(search_kwargs={'k': 8})
     llm = ChatOpenAI(model='gpt-4o', temperature=0)
     prompt = PromptTemplate(
         input_variables=['context', 'question'],

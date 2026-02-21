@@ -33,3 +33,10 @@ vectorstore = Chroma.from_documents(
     persist_directory='data/chroma'
 )
 print('Index built and saved to data/chroma/')
+# Add manual info
+with open('data/manual_info.txt') as f:
+    manual_text = f.read()
+docs.append(Document(
+    page_content=manual_text,
+    metadata={'url': 'https://www.microcenter.gr/information/contact', 'title': 'Πληροφορίες Καταστημάτων'}
+))
