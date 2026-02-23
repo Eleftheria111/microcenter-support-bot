@@ -1,10 +1,9 @@
 import json, os
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
-
 load_dotenv()
 
 # Load scraped pages
@@ -17,22 +16,6 @@ with open('data/processed/pages.jsonl') as f:
             metadata={'url': page['url'], 'title': page['title']}
         ))
 
-print(f'Loaded {len(docs)} pages')
-
-# Split into chunks
-splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-chunks = splitter.split_documents(docs)
-print(f'Split into {len(chunks)} chunks')
-
-# Create embeddings and store in ChromaDB
-print('Creating embeddings...')
-embeddings = OpenAIEmbeddings(model='text-embedding-3-small')
-vectorstore = Chroma.from_documents(
-    chunks,
-    embeddings,
-    persist_directory='data/chroma'
-)
-print('Index built and saved to data/chroma/')
 # Add manual info
 with open('data/manual_info.txt') as f:
     manual_text = f.read()
@@ -40,3 +23,18 @@ docs.append(Document(
     page_content=manual_text,
     metadata={'url': 'https://www.microcenter.gr/information/contact', 'title': 'Πληροφορίες Καταστημάτων'}
 ))
+
+print(f'Loaded {len(docs)} pages')
+
+# Split into chunks
+splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+chunks = splitter.split_documents(docs)
+print(f'Split into {len(chunks)} chunks')
+
+# Create embeddings and store in FAISS
+print('Creating embeddings...')
+embeddings = OpenAIEmbeddings(model='text-embedding-3-small')
+vectorstore = FAISS.from_documents(chunks, embeddings)
+os.makedirs('data/faiss', exist_ok=True)
+vectorstore.save_local('data/faiss')
+print('Index built and saved to data/faiss/')

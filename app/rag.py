@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_chroma import Chroma
+from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
@@ -29,10 +29,7 @@ def translate_to_greek(question: str, llm) -> str:
 
 def get_qa_chain():
     embeddings = OpenAIEmbeddings(model='text-embedding-3-small')
-    vectorstore = Chroma(
-        persist_directory='data/chroma',
-        embedding_function=embeddings
-    )
+    vectorstore = FAISS.load_local('data/faiss', embeddings, allow_dangerous_deserialization=True)
     retriever = vectorstore.as_retriever(search_kwargs={'k': 8})
     llm = ChatOpenAI(model='gpt-4o', temperature=0)
     prompt = PromptTemplate(
