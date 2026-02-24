@@ -95,10 +95,39 @@ def _store_stock_line(store_name: str, qty: int) -> str:
     return f"❌ Δεν υπάρχει στο {store_name}"
 
 
+def _fetch_with_primp_or_requests(url, params, headers, timeout=15):
+    """Fetch a URL using primp (Cloudflare bypass) with fallback to requests."""
+    try:
+        from primp import Client as PrimpClient
+        resp = PrimpClient(impersonate="chrome_133", verify=True).get(url, params=params, headers=headers, timeout=timeout)
+        return resp.status_code, resp.text
+    except Exception:
+        resp = requests.get(url, params=params, headers=headers, timeout=timeout)
+        return resp.status_code, resp.text
+
+
+def _format_per_store(qty_store: int, qty_branch: int) -> str:
+    """Format per-store stock lines using business rules."""
+    lines = []
+    lines.append(_store_stock_line("Αμπελόκηποι", qty_store))
+    lines.append(_store_stock_line("Παγκράτι", qty_branch))
+    return "\n  ".join(lines)
+
+
+def _format_total_stock(qty: int) -> str:
+    """Fallback formatting when only total qty is available."""
+    if qty > 2:
+        return "✅ Υπάρχει στα καταστήματά μας"
+    if qty in (1, 2):
+        lines = [f"⚠️ Περιορισμένο απόθεμα — καλέστε για επιβεβαίωση:"]
+        for store, info in STORE_INFO.items():
+            lines.append(f"    📍 {store}: {info['phone']}")
+        return "\n  ".join(lines)
+    return "❌ Εξαντλημένο"
+
+
 def check_stock(product_name: str) -> str:
-    """Query the store's live search for real-time price and stock of a product."""
-    url = f"{OPENCART_URL}/index.php"
-    params = {"route": "journal3/search", "search": product_name}
+    """Query the store for real-time price and per-store stock."""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
         "Accept": "application/json, text/javascript, */*; q=0.01",
@@ -106,43 +135,55 @@ def check_stock(product_name: str) -> str:
         "X-Requested-With": "XMLHttpRequest",
         "Referer": f"{OPENCART_URL}/",
     }
-    try:
-        from primp import Client as PrimpClient
-        resp = PrimpClient(impersonate="chrome_133", verify=True).get(url, params=params, headers=headers, timeout=15)
-        text = resp.text
-    except Exception:
-        # Fallback to plain requests
-        resp = requests.get(url, params=params, headers=headers, timeout=10)
-        text = resp.text
 
-    print(f"[check_stock] status={resp.status_code} preview={text[:200]}")
+    # --- Try custom per-store API first (requires opencart_stock_api.php installed) ---
+    token = _get_api_token()
+    if token:
+        status, text = _fetch_with_primp_or_requests(
+            f"{OPENCART_URL}/index.php",
+            {"route": "api/stock_locations", "api_token": token, "search": product_name},
+            headers,
+        )
+        print(f"[check_stock:per-store] status={status} preview={text[:150]}")
+        try:
+            data = json.loads(text)
+            if data.get("status") == "success" and data.get("products"):
+                results = []
+                for p in data["products"][:5]:
+                    stock_str = _format_per_store(
+                        int(p.get("qty_store", 0)),
+                        int(p.get("qty_branch", 0)),
+                    )
+                    results.append(
+                        f"**{p['name']}** — {p['price']}\n  {stock_str}\n  {p.get('href', '')}"
+                    )
+                return "\n\n".join(results)
+        except Exception:
+            pass  # Fall through to journal3/search
+
+    # --- Fallback: journal3/search (total qty only) ---
+    status, text = _fetch_with_primp_or_requests(
+        f"{OPENCART_URL}/index.php",
+        {"route": "journal3/search", "search": product_name},
+        headers,
+    )
+    print(f"[check_stock:journal3] status={status} preview={text[:150]}")
     try:
-        data = resp.json() if hasattr(resp, "json") and callable(resp.json) else __import__("json").loads(text)
+        data = json.loads(text)
     except Exception as e:
-        print(f"[check_stock] JSON parse error: {e}")
-        return f"[API_UNAVAILABLE] Bad response from store. Fall back to search_knowledge_base."
+        print(f"[check_stock] JSON error: {e}")
+        return "[API_UNAVAILABLE] Could not reach store. Fall back to search_knowledge_base."
 
     if data.get("status") != "success" or not data.get("response"):
-        print(f"[check_stock] no results: {data}")
         return f"Δεν βρέθηκε το προϊόν '{product_name}' στο κατάστημα."
 
     results = []
     for p in data["response"][:5]:
-        name = p.get("name", "Άγνωστο")
-        price = p.get("price", "—")
-        href = p.get("href", "")
         qty = int(p.get("quantity", 0))
-
-        if qty > 2:
-            stock_str = "✅ Υπάρχει στα καταστήματά μας"
-        elif qty in (1, 2):
-            phones = " / ".join(i["phone"] for i in STORE_INFO.values())
-            stock_str = f"⚠️ Περιορισμένο απόθεμα — καλέστε για κράτηση: {phones}"
-        else:
-            stock_str = "❌ Εξαντλημένο"
-
-        results.append(f"**{name}** — {price}\n  {stock_str}\n  {href}")
-
+        stock_str = _format_total_stock(qty)
+        results.append(
+            f"**{p.get('name', '?')}** — {p.get('price', '—')}\n  {stock_str}\n  {p.get('href', '')}"
+        )
     return "\n\n".join(results)
 
 
