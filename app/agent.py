@@ -18,6 +18,7 @@ client = OpenAI()
 
 OPENCART_URL = os.getenv("OPENCART_URL", "").rstrip("/")
 OPENCART_API_KEY = os.getenv("OPENCART_API_KEY", "")
+OPENCART_API_USERNAME = os.getenv("OPENCART_API_USERNAME", "default")
 
 STORE_INFO = {
     "Αμπελόκηποι": {"phone": "210 64 68 315"},
@@ -56,7 +57,7 @@ def _get_api_token() -> str:
     try:
         resp = requests.post(
             f"{OPENCART_URL}/index.php?route=api/login",
-            data={"username": "default", "key": OPENCART_API_KEY},
+            data={"username": OPENCART_API_USERNAME, "key": OPENCART_API_KEY},
             timeout=10,
         )
         print(f"[OpenCart auth] status={resp.status_code} body={resp.text[:300]}")
@@ -95,58 +96,37 @@ def _store_stock_line(store_name: str, qty: int) -> str:
 
 
 def check_stock(product_name: str) -> str:
-    """Query OpenCart API for real-time price and stock of a product."""
-    token = _get_api_token()
-    if not token:
-        return "[API_UNAVAILABLE] OpenCart API is unreachable. Fall back to search_knowledge_base to answer the customer."
-
+    """Query the store's live search for real-time price and stock of a product."""
     try:
         resp = requests.get(
             f"{OPENCART_URL}/index.php",
-            params={
-                "route": "api/catalog/product",
-                "api_token": token,
-                "search": product_name,
-            },
+            params={"route": "journal3/search", "search": product_name},
+            headers={"User-Agent": "Mozilla/5.0", "X-Requested-With": "XMLHttpRequest"},
             timeout=10,
         )
         data = resp.json()
     except Exception as e:
-        return f"Σφάλμα επικοινωνίας με το κατάστημα: {e}"
+        return f"[API_UNAVAILABLE] Could not reach store: {e}. Fall back to search_knowledge_base."
 
-    products = data.get("products", [])
-    if not products:
-        return f"Δεν βρέθηκε το προϊόν '{product_name}' στο σύστημα."
+    if data.get("status") != "success" or not data.get("response"):
+        return f"Δεν βρέθηκε το προϊόν '{product_name}' στο κατάστημα."
 
     results = []
-    for p in products[:5]:
+    for p in data["response"][:5]:
         name = p.get("name", "Άγνωστο")
         price = p.get("price", "—")
-        pid = p.get("product_id", "")
-        url = f"{OPENCART_URL}/index.php?route=product/product&product_id={pid}"
+        href = p.get("href", "")
+        qty = int(p.get("quantity", 0))
 
-        # Per-location stock (preferred if API returns it)
-        locations = p.get("locations") or p.get("stores") or []
-        if locations:
-            stock_lines = []
-            for loc in locations:
-                loc_name = loc.get("name", "")
-                loc_qty = int(loc.get("quantity", 0))
-                if loc_name in STORE_INFO or loc_qty > 0:
-                    stock_lines.append(_store_stock_line(loc_name, loc_qty))
-            stock_str = "\n  ".join(stock_lines) if stock_lines else "❌ Δεν υπάρχει σε κανένα κατάστημα"
+        if qty > 2:
+            stock_str = "✅ Υπάρχει στα καταστήματά μας"
+        elif qty in (1, 2):
+            phones = " / ".join(i["phone"] for i in STORE_INFO.values())
+            stock_str = f"⚠️ Περιορισμένο απόθεμα — καλέστε για κράτηση: {phones}"
         else:
-            # Fallback: single total quantity, no per-store breakdown
-            qty = int(p.get("quantity", 0))
-            if qty > 2:
-                stock_str = "✅ Διαθέσιμο στο κατάστημα"
-            elif qty in (1, 2):
-                phones = " / ".join(i["phone"] for i in STORE_INFO.values())
-                stock_str = f"⚠️ Περιορισμένο απόθεμα — καλέστε για κράτηση: {phones}"
-            else:
-                stock_str = "❌ Εξαντλημένο"
+            stock_str = "❌ Εξαντλημένο"
 
-        results.append(f"**{name}** — {price}€\n  {stock_str}\n  {url}")
+        results.append(f"**{name}** — {price}\n  {stock_str}\n  {href}")
 
     return "\n\n".join(results)
 
