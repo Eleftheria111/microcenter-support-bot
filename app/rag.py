@@ -31,7 +31,8 @@ def search_knowledge_base(query: str) -> str:
     if not docs:
         return "Δεν βρέθηκαν αποτελέσματα στη βάση γνώσεων."
     return "\n\n---\n\n".join(
-        f"[{d.metadata.get('title', '')}]\n{d.page_content}" for d in docs
+        f"[{d.metadata.get('title', '')}]\nURL: {d.metadata.get('url', '')}\n{d.page_content}"
+        for d in docs
     )
 
 
