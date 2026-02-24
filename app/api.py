@@ -1,8 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from app.rag import ask, get_qa_chain
+from app.rag import ask
 
 app = FastAPI()
 
@@ -13,15 +12,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-chain = get_qa_chain()
 
 class ChatRequest(BaseModel):
     message: str
 
+
 @app.post("/chat")
 async def chat(request: ChatRequest):
-    response = ask(request.message, chain)
-    return response
+    return ask(request.message)
+
 
 @app.get("/health")
 async def health():
