@@ -97,18 +97,30 @@ def _store_stock_line(store_name: str, qty: int) -> str:
 
 def check_stock(product_name: str) -> str:
     """Query the store's live search for real-time price and stock of a product."""
+    url = f"{OPENCART_URL}/index.php"
+    params = {"route": "journal3/search", "search": product_name}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Language": "el-GR,el;q=0.9,en;q=0.8",
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer": f"{OPENCART_URL}/",
+    }
     try:
-        resp = requests.get(
-            f"{OPENCART_URL}/index.php",
-            params={"route": "journal3/search", "search": product_name},
-            headers={"User-Agent": "Mozilla/5.0", "X-Requested-With": "XMLHttpRequest"},
-            timeout=10,
-        )
-        print(f"[check_stock] status={resp.status_code} len={len(resp.text)} preview={resp.text[:200]}")
-        data = resp.json()
+        from primp import Client as PrimpClient
+        resp = PrimpClient(impersonate="chrome_133", verify=True).get(url, params=params, headers=headers, timeout=15)
+        text = resp.text
+    except Exception:
+        # Fallback to plain requests
+        resp = requests.get(url, params=params, headers=headers, timeout=10)
+        text = resp.text
+
+    print(f"[check_stock] status={resp.status_code} preview={text[:200]}")
+    try:
+        data = resp.json() if hasattr(resp, "json") and callable(resp.json) else __import__("json").loads(text)
     except Exception as e:
-        print(f"[check_stock] ERROR: {e}")
-        return f"[API_UNAVAILABLE] Could not reach store: {e}. Fall back to search_knowledge_base."
+        print(f"[check_stock] JSON parse error: {e}")
+        return f"[API_UNAVAILABLE] Bad response from store. Fall back to search_knowledge_base."
 
     if data.get("status") != "success" or not data.get("response"):
         print(f"[check_stock] no results: {data}")
