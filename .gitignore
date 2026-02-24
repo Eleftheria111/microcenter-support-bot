@@ -1,6 +1,7 @@
 .env
 .venv/
 data/chroma/
+data/faiss/
 data/processed/
 data/raw/
 __pycache__/
