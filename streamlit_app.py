@@ -1,18 +1,10 @@
 import streamlit as st
 from langchain_core.messages import HumanMessage, AIMessage
-from app.rag import ask, get_agent
+from app.rag import ask
 
 st.set_page_config(page_title='Microcenter Support', page_icon='🤖')
 st.title('🤖 Microcenter.gr Customer Support')
 st.caption('Ρώτησέ με για προϊόντα, αποστολή, επιστροφές, ή ό,τι άλλο χρειάζεσαι!')
-
-
-@st.cache_resource
-def load_agent():
-    return get_agent()
-
-
-load_agent()  # warm up on startup
 
 if 'messages' not in st.session_state:
     st.session_state.messages = []

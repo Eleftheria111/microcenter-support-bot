@@ -1,13 +1,14 @@
 import re
+import json
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from openai import OpenAI
+from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_community.tools import DuckDuckGoSearchRun
-from langchain.tools import tool
-from langchain.agents import create_tool_calling_agent, AgentExecutor
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 load_dotenv()
+
+client = OpenAI()
 
 # --- Vectorstore (loaded once) ---
 
@@ -23,12 +24,9 @@ def _get_vectorstore():
     return _vectorstore
 
 
-# --- Tools ---
+# --- Tool implementations ---
 
-@tool
 def search_knowledge_base(query: str) -> str:
-    """Search the microcenter.gr knowledge base for products, prices, shipping,
-    returns, payment methods, and store hours."""
     docs = _get_vectorstore().similarity_search(query, k=6)
     if not docs:
         return "Δεν βρέθηκαν αποτελέσματα στη βάση γνώσεων."
@@ -37,16 +35,11 @@ def search_knowledge_base(query: str) -> str:
     )
 
 
-@tool
 def search_web(query: str) -> str:
-    """Search the web for product specifications, device compatibility, reviews,
-    or anything not available in the knowledge base."""
     return DuckDuckGoSearchRun().run(query)
 
 
-@tool
 def compare_products(product_a: str, product_b: str) -> str:
-    """Compare two products side by side using knowledge base information."""
     vs = _get_vectorstore()
 
     def fetch(name: str) -> str:
@@ -56,10 +49,7 @@ def compare_products(product_a: str, product_b: str) -> str:
     return f"### {product_a}\n{fetch(product_a)}\n\n### {product_b}\n{fetch(product_b)}"
 
 
-@tool
 def suggest_by_budget(budget: float, category: str = "") -> str:
-    """Suggest products within a given budget (in euros).
-    Optionally filter by category, e.g. 'θήκη', 'φορτιστής', 'καλώδιο'."""
     query = f"προϊόντα τιμή {category}".strip()
     docs = _get_vectorstore().similarity_search(query, k=12)
     found = []
@@ -76,7 +66,80 @@ def suggest_by_budget(budget: float, category: str = "") -> str:
     return f"Προϊόντα έως {budget}€:\n" + "\n".join(found[:8])
 
 
-# --- Agent ---
+def _call_tool(name: str, args: dict) -> str:
+    if name == "search_knowledge_base":
+        return search_knowledge_base(args["query"])
+    if name == "search_web":
+        return search_web(args["query"])
+    if name == "compare_products":
+        return compare_products(args["product_a"], args["product_b"])
+    if name == "suggest_by_budget":
+        return suggest_by_budget(args["budget"], args.get("category", ""))
+    return "Unknown tool."
+
+
+# --- OpenAI function schemas ---
+
+_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_knowledge_base",
+            "description": "Search the microcenter.gr knowledge base for products, prices, shipping, returns, payment methods, and store hours.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"}
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_web",
+            "description": "Search the web for product specifications, device compatibility, or anything not in the knowledge base.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"}
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "compare_products",
+            "description": "Compare two products side by side using knowledge base information.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "product_a": {"type": "string"},
+                    "product_b": {"type": "string"},
+                },
+                "required": ["product_a", "product_b"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "suggest_by_budget",
+            "description": "Suggest products within a given budget in euros. Optionally filter by category.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "budget": {"type": "number", "description": "Maximum budget in euros"},
+                    "category": {"type": "string", "description": "Optional product category, e.g. θήκη, φορτιστής, καλώδιο"},
+                },
+                "required": ["budget"],
+            },
+        },
+    },
+]
 
 _SYSTEM = """Είσαι ο βοηθός εξυπηρέτησης πελατών του microcenter.gr, ελληνικό e-shop τεχνολογικών αξεσουάρ.
 
@@ -88,30 +151,51 @@ _SYSTEM = """Είσαι ο βοηθός εξυπηρέτησης πελατών 
 - Χρησιμοποίησε το suggest_by_budget όταν ο πελάτης αναφέρει προϋπολογισμό.
 - Παραπέμψε στο support (info@microcenter.gr) μόνο αν δεν μπορείς να βοηθήσεις με κανένα εργαλείο."""
 
-_agent_executor = None
 
-
-def get_agent() -> AgentExecutor:
-    global _agent_executor
-    if _agent_executor is None:
-        llm = ChatOpenAI(model='gpt-4o', temperature=0)
-        tools = [search_knowledge_base, search_web, compare_products, suggest_by_budget]
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", _SYSTEM),
-            MessagesPlaceholder("chat_history", optional=True),
-            ("human", "{input}"),
-            MessagesPlaceholder("agent_scratchpad"),
-        ])
-        agent = create_tool_calling_agent(llm, tools, prompt)
-        _agent_executor = AgentExecutor(
-            agent=agent, tools=tools, verbose=True, max_iterations=5
-        )
-    return _agent_executor
-
+# --- Agent loop ---
 
 def ask(question: str, chat_history: list = None) -> dict:
-    result = get_agent().invoke({
-        "input": question,
-        "chat_history": chat_history or [],
-    })
-    return {"answer": result["output"]}
+    messages = [{"role": "system", "content": _SYSTEM}]
+
+    if chat_history:
+        for msg in chat_history:
+            if hasattr(msg, 'content'):
+                role = "user" if msg.__class__.__name__ == "HumanMessage" else "assistant"
+                messages.append({"role": role, "content": msg.content})
+            else:
+                messages.append(msg)
+
+    messages.append({"role": "user", "content": question})
+
+    for _ in range(5):  # max tool-call iterations
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            tools=_TOOLS,
+            tool_choice="auto",
+            temperature=0,
+        )
+        msg = response.choices[0].message
+
+        if not msg.tool_calls:
+            return {"answer": msg.content}
+
+        # Append assistant message with tool calls
+        messages.append(msg)
+
+        # Execute each tool call and append results
+        for tc in msg.tool_calls:
+            args = json.loads(tc.function.arguments)
+            result = _call_tool(tc.function.name, args)
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": result,
+            })
+
+    return {"answer": "Δεν μπόρεσα να βρω απάντηση. Παρακαλώ επικοινωνήστε με το info@microcenter.gr"}
+
+
+# Kept for backwards compatibility with api.py / any callers
+def get_agent():
+    return None
