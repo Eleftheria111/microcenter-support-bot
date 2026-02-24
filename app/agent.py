@@ -16,7 +16,7 @@ load_dotenv()
 
 client = OpenAI()
 
-OPENCART_URL = os.getenv("OPENCART_URL", "").rstrip("/")
+OPENCART_URL = os.getenv("OPENCART_URL", "https://www.microcenter.gr").rstrip("/")
 OPENCART_API_KEY = os.getenv("OPENCART_API_KEY", "")
 OPENCART_API_USERNAME = os.getenv("OPENCART_API_USERNAME", "default")
 
