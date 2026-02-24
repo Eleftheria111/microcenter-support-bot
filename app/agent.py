@@ -19,6 +19,11 @@ client = OpenAI()
 OPENCART_URL = os.getenv("OPENCART_URL", "").rstrip("/")
 OPENCART_API_KEY = os.getenv("OPENCART_API_KEY", "")
 
+STORE_INFO = {
+    "Αμπελόκηποι": {"phone": "210 64 68 315"},
+    "Παγκράτι":    {"phone": "210 220 1684 ή 211 111 5982"},
+}
+
 
 # ---------------------------------------------------------------------------
 # Vectorstore (lazy, loaded once)
@@ -76,6 +81,18 @@ def search_knowledge_base(query: str) -> str:
     )
 
 
+def _store_stock_line(store_name: str, qty: int) -> str:
+    """Format a single store's stock status line per business rules."""
+    info = STORE_INFO.get(store_name, {})
+    phone = info.get("phone", "")
+    if qty > 2:
+        return f"✅ Υπάρχει στους {store_name}"
+    if qty in (1, 2):
+        phone_str = f" — καλέστε για κράτηση: {phone}" if phone else ""
+        return f"⚠️ Περιορισμένο απόθεμα στο {store_name}{phone_str}"
+    return f"❌ Δεν υπάρχει στο {store_name}"
+
+
 def check_stock(product_name: str) -> str:
     """Query OpenCart API for real-time price and stock of a product."""
     token = _get_api_token()
@@ -100,19 +117,37 @@ def check_stock(product_name: str) -> str:
     if not products:
         return f"Δεν βρέθηκε το προϊόν '{product_name}' στο σύστημα."
 
-    lines = []
+    results = []
     for p in products[:5]:
         name = p.get("name", "Άγνωστο")
         price = p.get("price", "—")
-        qty = int(p.get("quantity", 0))
-        sku = p.get("sku", "")
         pid = p.get("product_id", "")
         url = f"{OPENCART_URL}/index.php?route=product/product&product_id={pid}"
-        stock_label = f"✅ Διαθέσιμο ({qty} τεμ.)" if qty > 0 else "❌ Μη διαθέσιμο"
-        sku_info = f" | SKU: {sku}" if sku else ""
-        lines.append(f"• {name}{sku_info}\n  Τιμή: {price}€ | {stock_label}\n  {url}")
 
-    return "\n\n".join(lines)
+        # Per-location stock (preferred if API returns it)
+        locations = p.get("locations") or p.get("stores") or []
+        if locations:
+            stock_lines = []
+            for loc in locations:
+                loc_name = loc.get("name", "")
+                loc_qty = int(loc.get("quantity", 0))
+                if loc_name in STORE_INFO or loc_qty > 0:
+                    stock_lines.append(_store_stock_line(loc_name, loc_qty))
+            stock_str = "\n  ".join(stock_lines) if stock_lines else "❌ Δεν υπάρχει σε κανένα κατάστημα"
+        else:
+            # Fallback: single total quantity, no per-store breakdown
+            qty = int(p.get("quantity", 0))
+            if qty > 2:
+                stock_str = "✅ Διαθέσιμο στο κατάστημα"
+            elif qty in (1, 2):
+                phones = " / ".join(i["phone"] for i in STORE_INFO.values())
+                stock_str = f"⚠️ Περιορισμένο απόθεμα — καλέστε για κράτηση: {phones}"
+            else:
+                stock_str = "❌ Εξαντλημένο"
+
+        results.append(f"**{name}** — {price}€\n  {stock_str}\n  {url}")
+
+    return "\n\n".join(results)
 
 
 def search_web(query: str) -> str:
