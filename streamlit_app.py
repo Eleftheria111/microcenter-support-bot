@@ -1,6 +1,6 @@
 import streamlit as st
 from langchain_core.messages import HumanMessage, AIMessage
-from app.rag import ask
+from app.agent import ask
 
 st.set_page_config(page_title='Microcenter Support', page_icon='🤖')
 st.title('🤖 Microcenter.gr Customer Support')
