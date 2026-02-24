@@ -4,7 +4,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_community.tools import DuckDuckGoSearchRun
 from langchain.tools import tool
-from langchain.agents import create_openai_tools_agent, AgentExecutor
+from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 load_dotenv()
@@ -102,7 +102,7 @@ def get_agent() -> AgentExecutor:
             ("human", "{input}"),
             MessagesPlaceholder("agent_scratchpad"),
         ])
-        agent = create_openai_tools_agent(llm, tools, prompt)
+        agent = create_tool_calling_agent(llm, tools, prompt)
         _agent_executor = AgentExecutor(
             agent=agent, tools=tools, verbose=True, max_iterations=5
         )
