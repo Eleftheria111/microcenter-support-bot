@@ -59,11 +59,12 @@ def _get_api_token() -> str:
             data={"username": "default", "key": OPENCART_API_KEY},
             timeout=10,
         )
+        print(f"[OpenCart auth] status={resp.status_code} body={resp.text[:300]}")
         data = resp.json()
         _api_token = data.get("api_token") or data.get("token", "")
     except Exception as e:
         _api_token = ""
-        print(f"OpenCart auth failed: {e}")
+        print(f"[OpenCart auth] failed: {e}")
     return _api_token
 
 
@@ -97,7 +98,7 @@ def check_stock(product_name: str) -> str:
     """Query OpenCart API for real-time price and stock of a product."""
     token = _get_api_token()
     if not token:
-        return "Δεν ήταν δυνατή η σύνδεση με το σύστημα του καταστήματος. Δοκιμάστε αργότερα."
+        return "[API_UNAVAILABLE] OpenCart API is unreachable. Fall back to search_knowledge_base to answer the customer."
 
     try:
         resp = requests.get(
@@ -294,7 +295,7 @@ _SYSTEM = """Είσαι ο βοηθός εξυπηρέτησης πελατών 
 Κανόνες:
 - Απάντα στη γλώσσα που χρησιμοποιεί ο πελάτης (Ελληνικά αν γράψει Ελληνικά, Αγγλικά αν γράψει Αγγλικά).
 - Χρησιμοποίησε πρώτα το search_knowledge_base για προϊόντα και πολιτικές του καταστήματος.
-- Χρησιμοποίησε το check_stock για να ελέγξεις διαθεσιμότητα και τρέχουσα τιμή σε πραγματικό χρόνο.
+- Χρησιμοποίησε το check_stock για να ελέγξεις διαθεσιμότητα και τρέχουσα τιμή σε πραγματικό χρόνο. Αν το check_stock επιστρέψει [API_UNAVAILABLE], χρησιμοποίησε αμέσως το search_knowledge_base.
 - Χρησιμοποίησε το search_web για προδιαγραφές, συμβατότητα ή πληροφορίες που δεν υπάρχουν στη βάση.
 - Χρησιμοποίησε το compare_products όταν ο πελάτης θέλει σύγκριση δύο προϊόντων.
 - Χρησιμοποίησε το suggest_by_budget όταν ο πελάτης αναφέρει προϋπολογισμό.
