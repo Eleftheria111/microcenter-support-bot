@@ -9,4 +9,4 @@ python-dotenv
 requests
 beautifulsoup4
 lxml
-duckduckgo-search
+ddgs
