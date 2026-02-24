@@ -104,11 +104,14 @@ def check_stock(product_name: str) -> str:
             headers={"User-Agent": "Mozilla/5.0", "X-Requested-With": "XMLHttpRequest"},
             timeout=10,
         )
+        print(f"[check_stock] status={resp.status_code} len={len(resp.text)} preview={resp.text[:200]}")
         data = resp.json()
     except Exception as e:
+        print(f"[check_stock] ERROR: {e}")
         return f"[API_UNAVAILABLE] Could not reach store: {e}. Fall back to search_knowledge_base."
 
     if data.get("status") != "success" or not data.get("response"):
+        print(f"[check_stock] no results: {data}")
         return f"Δεν βρέθηκε το προϊόν '{product_name}' στο κατάστημα."
 
     results = []
