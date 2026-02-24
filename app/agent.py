@@ -21,8 +21,8 @@ OPENCART_API_KEY = os.getenv("OPENCART_API_KEY", "")
 OPENCART_API_USERNAME = os.getenv("OPENCART_API_USERNAME", "default")
 
 STORE_INFO = {
-    "Αμπελόκηποι": {"phone": "210 64 68 315"},
-    "Παγκράτι":    {"phone": "210 220 1684 ή 211 111 5982"},
+    "Αμπελόκηποι": {"phone": "210 64 68 315",             "locative": "στους Αμπελόκηπους"},
+    "Παγκράτι":    {"phone": "210 220 1684 ή 211 111 5982", "locative": "στο Παγκράτι"},
 }
 
 
@@ -87,12 +87,13 @@ def _store_stock_line(store_name: str, qty: int) -> str:
     """Format a single store's stock status line per business rules."""
     info = STORE_INFO.get(store_name, {})
     phone = info.get("phone", "")
+    loc   = info.get("locative", f"στο {store_name}")
     if qty > 2:
-        return f"✅ Υπάρχει στους {store_name}"
+        return f"✅ Υπάρχει {loc}"
     if qty in (1, 2):
         phone_str = f" — καλέστε για κράτηση: {phone}" if phone else ""
-        return f"⚠️ Περιορισμένο απόθεμα στο {store_name}{phone_str}"
-    return f"❌ Δεν υπάρχει στο {store_name}"
+        return f"⚠️ Περιορισμένο απόθεμα {loc}{phone_str}"
+    return f"❌ Δεν υπάρχει {loc}"
 
 
 def _fetch_with_primp_or_requests(url, params, headers, timeout=15):
@@ -107,21 +108,21 @@ def _fetch_with_primp_or_requests(url, params, headers, timeout=15):
 
 
 def _format_per_store(qty_store: int, qty_branch: int) -> str:
-    """Format per-store stock lines using business rules."""
-    lines = []
-    lines.append(_store_stock_line("Αμπελόκηποι", qty_store))
-    lines.append(_store_stock_line("Παγκράτι", qty_branch))
-    return "\n  ".join(lines)
+    """Format per-store stock lines: qty_store=Αμπελόκηποι, qty_branch=Παγκράτι."""
+    return "\n  ".join([
+        _store_stock_line("Αμπελόκηποι", qty_store),
+        _store_stock_line("Παγκράτι",    qty_branch),
+    ])
 
 
 def _format_total_stock(qty: int) -> str:
-    """Fallback formatting when only total qty is available."""
+    """Fallback when only total qty is known (no per-store breakdown)."""
     if qty > 2:
         return "✅ Υπάρχει στα καταστήματά μας"
     if qty in (1, 2):
-        lines = [f"⚠️ Περιορισμένο απόθεμα — καλέστε για επιβεβαίωση:"]
-        for store, info in STORE_INFO.items():
-            lines.append(f"    📍 {store}: {info['phone']}")
+        lines = ["⚠️ Περιορισμένο απόθεμα — καλέστε για επιβεβαίωση:"]
+        for info in STORE_INFO.values():
+            lines.append(f"    📍 {info['locative'].replace('στο ','').replace('στους ','')}: {info['phone']}")
         return "\n  ".join(lines)
     return "❌ Εξαντλημένο"
 

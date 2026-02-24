@@ -26,9 +26,9 @@
  */
 class ControllerApiStockLocations extends Controller {
 
-    // Adjust these if your column names differ
-    const COL_STORE  = 'quantity';         // Ποσότητα καταστήματος  (Αμπελόκηποι)
-    const COL_BRANCH = 'quantity2';        // Ποσότητα υποκαταστήματος (Παγκράτι)
+    // Column names in oc_product for per-store stock
+    const COL_STORE  = 'quantity_store';    // Ποσότητα καταστήματος  (Αμπελόκηποι)
+    const COL_BRANCH = 'quantity_substore'; // Ποσότητα υποκαταστήματος (Παγκράτι)
 
     public function index() {
         $this->response->addHeader('Content-Type: application/json');
@@ -104,6 +104,8 @@ class ControllerApiStockLocations extends Controller {
      */
     private function detectBranchColumn() {
         $candidates = [
+            'quantity_substore',  // microcenter.gr
+            'quantity_store',     // microcenter.gr main store (shouldn't need detection but listed for reference)
             'quantity2',
             'quantity_branch',
             'quantity_sub',
