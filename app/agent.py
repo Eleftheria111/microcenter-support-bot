@@ -50,12 +50,14 @@ def _get_vectorstore():
 _api_token = None
 
 
-def _get_api_token() -> str:
+def _get_api_token(force_refresh: bool = False) -> str:
     global _api_token
-    if _api_token:
+    if _api_token and not force_refresh:
         return _api_token
     try:
-        resp = requests.post(
+        # Use primp to bypass Cloudflare on the auth POST
+        from primp import Client as PrimpClient
+        resp = PrimpClient(impersonate="chrome_133", verify=True).post(
             f"{OPENCART_URL}/index.php?route=api/login",
             data={"username": OPENCART_API_USERNAME, "key": OPENCART_API_KEY},
             timeout=10,
@@ -64,8 +66,20 @@ def _get_api_token() -> str:
         data = resp.json()
         _api_token = data.get("api_token") or data.get("token", "")
     except Exception as e:
-        _api_token = ""
-        print(f"[OpenCart auth] failed: {e}")
+        # Fallback to plain requests
+        try:
+            resp = requests.post(
+                f"{OPENCART_URL}/index.php?route=api/login",
+                data={"username": OPENCART_API_USERNAME, "key": OPENCART_API_KEY},
+                timeout=10,
+            )
+            print(f"[OpenCart auth fallback] status={resp.status_code} body={resp.text[:300]}")
+            data = resp.json()
+            _api_token = data.get("api_token") or data.get("token", "")
+        except Exception as e2:
+            _api_token = ""
+            print(f"[OpenCart auth] failed: {e} | fallback also failed: {e2}")
+    print(f"[OpenCart auth] token={'OK ('+_api_token[:8]+')' if _api_token else 'EMPTY'}")
     return _api_token
 
 
@@ -142,14 +156,16 @@ def check_stock(product_name: str) -> str:
     }
 
     # --- Try custom per-store API first (requires opencart_stock_api.php installed) ---
-    token = _get_api_token()
-    if token:
+    for attempt in range(2):  # retry once with fresh token if needed
+        token = _get_api_token(force_refresh=(attempt > 0))
+        if not token:
+            break
         status, text = _fetch_with_primp_or_requests(
             f"{OPENCART_URL}/index.php",
             {"route": "api/stock_locations", "api_token": token, "search": product_name},
             headers,
         )
-        print(f"[check_stock:per-store] status={status} preview={text[:150]}")
+        print(f"[check_stock:per-store attempt={attempt}] status={status} preview={text[:200]}")
         try:
             data = json.loads(text)
             if data.get("status") == "success" and data.get("products"):
@@ -160,11 +176,17 @@ def check_stock(product_name: str) -> str:
                         int(p.get("qty_branch", 0)),
                     )
                     results.append(
-                        f"**{p['name']}** — {p['price']}\n  {stock_str}\n  {p.get('href', '')}"
+                        f"**{p['name']}** — {p['price']}\n{stock_str}\n  {p.get('href', '')}"
                     )
                 return "\n\n".join(results)
-        except Exception:
-            pass  # Fall through to journal3/search
+            # Token expired? retry with fresh token
+            if data.get("error") or data.get("status") == "error":
+                print(f"[check_stock:per-store] API error: {data} — refreshing token")
+                _api_token = None
+                continue
+        except Exception as e:
+            print(f"[check_stock:per-store] JSON parse failed: {e} — raw: {text[:200]}")
+        break  # non-token error, don't retry
 
     # --- Fallback: journal3/search (total qty only) ---
     status, text = _fetch_with_primp_or_requests(
