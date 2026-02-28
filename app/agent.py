@@ -221,7 +221,9 @@ def suggest_by_budget(budget: float, category: str = "") -> str:
 
 def browse_category(keyword: str) -> str:
     """Search products using a short category keyword (e.g. 'λουράκι', 'θήκη', 'φορτιστής').
-    Returns up to 15 products. Tries custom per-store API first, then journal3/search."""
+    Returns 3-5 example products + a link to the full category page."""
+    from urllib.parse import quote
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
         "Accept": "application/json, text/javascript, */*; q=0.01",
@@ -230,11 +232,15 @@ def browse_category(keyword: str) -> str:
         "Referer": f"{OPENCART_URL}/",
     }
 
+    # Link to full results page for the user to explore further
+    all_results_url = f"{OPENCART_URL}/index.php?route=product/search&search={quote(keyword)}"
+    footer = f"\n\n---\n🔗 [Δείτε όλα τα προϊόντα για «{keyword}» →]({all_results_url})"
+
     token = _get_api_token()
     if token:
         status, text = _fetch_with_primp_or_requests(
             f"{OPENCART_URL}/index.php",
-            {"route": "api/stock_locations", "api_token": token, "search": keyword, "limit": 15},
+            {"route": "api/stock_locations", "api_token": token, "search": keyword, "limit": 10},
             headers,
         )
         print(f"[browse_category:per-store] status={status} preview={text[:150]}")
@@ -242,22 +248,22 @@ def browse_category(keyword: str) -> str:
             data = json.loads(text)
             if data.get("status") == "success" and data.get("products"):
                 results = []
-                for p in data["products"][:15]:
+                for p in data["products"][:5]:
                     stock_str = _format_per_store(
                         int(p.get("qty_store", 0)),
                         int(p.get("qty_branch", 0)),
                     )
                     results.append(
-                        f"**{p['name']}** — {p['price']}\n  {stock_str}\n  {p.get('href', '')}"
+                        f"**[{p['name']}]({p.get('href', '')})**  — {p['price']}\n  {stock_str}"
                     )
-                return "\n\n".join(results)
+                return "\n\n".join(results) + footer
         except Exception:
             pass
 
     # Fallback: journal3/search
     status, text = _fetch_with_primp_or_requests(
         f"{OPENCART_URL}/index.php",
-        {"route": "journal3/search", "search": keyword, "limit": 15},
+        {"route": "journal3/search", "search": keyword, "limit": 10},
         headers,
     )
     print(f"[browse_category:journal3] status={status} preview={text[:150]}")
@@ -271,13 +277,16 @@ def browse_category(keyword: str) -> str:
         return f"Δεν βρέθηκαν προϊόντα για '{keyword}'."
 
     results = []
-    for p in data["response"][:15]:
+    for p in data["response"][:5]:
         qty = int(p.get("quantity", 0))
         stock_str = _format_total_stock(qty)
+        href = p.get("href", "")
+        name = p.get("name", "?")
+        price = p.get("price", "—")
         results.append(
-            f"**{p.get('name', '?')}** — {p.get('price', '—')}\n  {stock_str}\n  {p.get('href', '')}"
+            f"**[{name}]({href})**  — {price}\n  {stock_str}"
         )
-    return "\n\n".join(results)
+    return "\n\n".join(results) + footer
 
 
 def _call_tool(name: str, args: dict) -> str:
