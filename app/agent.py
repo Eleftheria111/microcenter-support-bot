@@ -180,6 +180,11 @@ def check_stock(product_name: str) -> str:
         return "[API_UNAVAILABLE] Could not reach store. Fall back to search_knowledge_base."
 
     if data.get("status") != "success" or not data.get("response"):
+        # Retry with simplified keyword (e.g. remove "5G", "Pro", etc.)
+        simplified = _simplify_keyword(product_name)
+        if simplified:
+            print(f"[check_stock] No results for '{product_name}', retrying with '{simplified}'")
+            return check_stock(simplified)
         return f"Δεν βρέθηκε το προϊόν '{product_name}' στο κατάστημα."
 
     results = []
@@ -187,7 +192,7 @@ def check_stock(product_name: str) -> str:
         qty = int(p.get("quantity", 0))
         stock_str = _format_total_stock(qty)
         results.append(
-            f"**{p.get('name', '?')}** — {p.get('price', '—')}\n  {stock_str}\n  {p.get('href', '')}"
+            f"**{p.get('name', '?')}** — {p.get('price', '—')}\n{stock_str}\n  {p.get('href', '')}"
         )
     return "\n\n".join(results)
 
@@ -221,6 +226,15 @@ def suggest_by_budget(budget: float, category: str = "") -> str:
     if not found:
         return f"Δεν βρέθηκαν προϊόντα εντός προϋπολογισμού {budget}€."
     return f"Προϊόντα έως {budget}€:\n" + "\n".join(found[:8])
+
+
+def _simplify_keyword(keyword: str) -> str:
+    """Remove common model suffixes (5G, Pro, Max, etc.) to broaden a failed search."""
+    simplified = re.sub(
+        r'\b(5G|4G|5g|4g|Pro|Max|Plus|Ultra|Mini|Lite|SE|NFC)\b', '', keyword
+    ).strip()
+    simplified = re.sub(r'\s+', ' ', simplified).strip()
+    return simplified if simplified != keyword else ""
 
 
 def browse_category(keyword: str) -> str:
@@ -278,6 +292,11 @@ def browse_category(keyword: str) -> str:
         return "[API_UNAVAILABLE] Could not reach store."
 
     if data.get("status") != "success" or not data.get("response"):
+        # Retry with simplified keyword (e.g. remove "5G", "Pro", etc.)
+        simplified = _simplify_keyword(keyword)
+        if simplified:
+            print(f"[browse_category] No results for '{keyword}', retrying with '{simplified}'")
+            return browse_category(simplified)
         return f"Δεν βρέθηκαν προϊόντα για '{keyword}'."
 
     results = []
@@ -288,7 +307,7 @@ def browse_category(keyword: str) -> str:
         name = p.get("name", "?")
         price = p.get("price", "—")
         results.append(
-            f"**[{name}]({href})**  — {price}\n  {stock_str}"
+            f"**[{name}]({href})**  — {price}\n{stock_str}"
         )
     return "\n\n".join(results) + footer
 
