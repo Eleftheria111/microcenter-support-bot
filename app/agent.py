@@ -87,13 +87,11 @@ def _store_stock_line(store_name: str, qty: int) -> str:
     """Format a single store's stock status line per business rules."""
     info = STORE_INFO.get(store_name, {})
     phone = info.get("phone", "")
-    loc   = info.get("locative", f"στο {store_name}")
     if qty > 2:
-        return f"Υπάρχει {loc}"
+        return f"- **{store_name}**: ✅ Διαθέσιμο"
     if qty in (1, 2):
-        phone_str = f" — καλέστε για κράτηση: {phone}" if phone else ""
-        return f"Περιορισμένο απόθεμα {loc}{phone_str}"
-    return f"Δεν υπάρχει {loc}"
+        return f"- **{store_name}**: ⚠️ Περιορισμένο απόθεμα — καλέστε: {phone}"
+    return f"- **{store_name}**: ❌ Μη διαθέσιμο"
 
 
 def _fetch_with_primp_or_requests(url, params, headers, timeout=15):
@@ -109,7 +107,7 @@ def _fetch_with_primp_or_requests(url, params, headers, timeout=15):
 
 def _format_per_store(qty_store: int, qty_branch: int) -> str:
     """Format per-store stock lines: qty_store=Αμπελόκηποι, qty_branch=Παγκράτι."""
-    return "\n  ".join([
+    return "\n".join([
         _store_stock_line("Αμπελόκηποι", qty_store),
         _store_stock_line("Παγκράτι",    qty_branch),
     ])
@@ -118,13 +116,19 @@ def _format_per_store(qty_store: int, qty_branch: int) -> str:
 def _format_total_stock(qty: int) -> str:
     """Fallback when only total qty is known (no per-store breakdown)."""
     if qty > 2:
-        return "Υπάρχει στα καταστήματά μας"
+        return (
+            f"- **Αμπελόκηποι**: ✅ Διαθέσιμο\n"
+            f"- **Παγκράτι**: ✅ Διαθέσιμο"
+        )
     if qty in (1, 2):
-        lines = ["Περιορισμένο απόθεμα — καλέστε για επιβεβαίωση:"]
-        for info in STORE_INFO.values():
-            lines.append(f"    📍 {info['locative'].replace('στο ','').replace('στους ','')}: {info['phone']}")
-        return "\n  ".join(lines)
-    return "Εξαντλημένο"
+        return (
+            f"- **Αμπελόκηποι**: ⚠️ Περιορισμένο απόθεμα — καλέστε: 210 64 68 315\n"
+            f"- **Παγκράτι**: ⚠️ Περιορισμένο απόθεμα — καλέστε: 210 220 1684 ή 211 111 5982"
+        )
+    return (
+        f"- **Αμπελόκηποι**: ❌ Μη διαθέσιμο\n"
+        f"- **Παγκράτι**: ❌ Μη διαθέσιμο"
+    )
 
 
 def check_stock(product_name: str) -> str:
@@ -439,12 +443,13 @@ _SYSTEM = """Είσαι ο βοηθός εξυπηρέτησης πελατών 
 Τηλέφωνο: 210 220 1684 / 211 111 5982
 Ώρες: Δευτέρα–Τετάρτη 09:00–15:00 | Τρίτη–Πέμπτη–Παρασκευή 09:00–14:30 & 17:00–21:00 | Σάββατο 09:00–15:00
 
-## Απόθεμα — κανόνες παρουσίασης
-- Παρουσίασε ΠΑΝΤΑ το απόθεμα **ξεχωριστά για κάθε κατάστημα**, ακριβώς όπως επιστρέφεται από τα εργαλεία.
-- ΜΗΝ συγχωνεύεις τα δύο καταστήματα σε μία γραμμή.
-- Μορφή:
-  - Αμπελόκηποι: [διαθεσιμότητα] — [τηλ. αν περιορισμένο]
-  - Παγκράτι: [διαθεσιμότητα] — [τηλ. αν περιορισμένο]
+## Απόθεμα — ΚΡΙΤΙΚΟΣ ΚΑΝΟΝΑΣ
+Οι γραμμές αποθέματος από τα εργαλεία ξεκινούν με `-`. Αντέγραψέ τες **ΑΥΤΟΥΣΙΩΣ** στην απάντησή σου, χωρίς καμία αλλαγή ή σύνοψη. Παράδειγμα σωστής παρουσίασης:
+
+- **Αμπελόκηποι**: ❌ Μη διαθέσιμο
+- **Παγκράτι**: ⚠️ Περιορισμένο απόθεμα — καλέστε: 210 220 1684 ή 211 111 5982
+
+ΜΗΝ γράφεις ποτέ "συνιστάται να καλέσετε και τα δύο καταστήματα" ή παρόμοιο. Εμφάνισε ΠΑΝΤΑ κάθε κατάστημα ξεχωριστά.
 
 ## Αναζήτηση προϊόντων — ΥΠΟΧΡΕΩΤΙΚΗ σειρά
 
