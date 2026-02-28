@@ -103,10 +103,10 @@ def _store_stock_line(store_name: str, qty: int) -> str:
     info = STORE_INFO.get(store_name, {})
     phone = info.get("phone", "")
     if qty > 2:
-        return f"- **{store_name}**: ✅ Διαθέσιμο"
+        return f"- **{store_name}**: Διαθέσιμο"
     if qty in (1, 2):
-        return f"- **{store_name}**: ⚠️ Περιορισμένο απόθεμα — καλέστε: {phone}"
-    return f"- **{store_name}**: ❌ Μη διαθέσιμο"
+        return f"- **{store_name}**: Περιορισμένο απόθεμα — καλέστε: {phone}"
+    return f"- **{store_name}**: Μη διαθέσιμο"
 
 
 def _fetch_with_primp_or_requests(url, params, headers, timeout=15):
@@ -131,19 +131,20 @@ def _format_per_store(qty_store: int, qty_branch: int) -> str:
 def _format_total_stock(qty: int) -> str:
     """Fallback when only total qty is known (no per-store breakdown).
     Threshold >5 for 'available' because with 2 stores, qty=4 could mean 3+1 (one limited)."""
-    if qty > 5:
+    if qty > 2:
         return (
-            f"- **Αμπελόκηποι**: ✅ Διαθέσιμο\n"
-            f"- **Παγκράτι**: ✅ Διαθέσιμο"
+            f"- **Αμπελόκηποι**: Διαθέσιμο\n"
+            f"- **Παγκράτι**: Διαθέσιμο"
         )
-    if qty >= 1:
+    if qty == 2 or qty == 1:
         return (
-            f"- **Αμπελόκηποι**: ⚠️ Περιορισμένο απόθεμα — καλέστε για επιβεβαίωση: 210 64 68 315\n"
-            f"- **Παγκράτι**: ⚠️ Περιορισμένο απόθεμα — καλέστε για επιβεβαίωση: 210 220 1684 ή 211 111 5982"
+            f"- **Αμπελόκηποι**:  Περιορισμένο απόθεμα — καλέστε για επιβεβαίωση: 210 64 68 315\n"
+            f"- **Παγκράτι**:  Περιορισμένο απόθεμα — καλέστε για επιβεβαίωση: 210 220 1684 ή 211 111 5982"
         )
-    return (
-        f"- **Αμπελόκηποι**: ❌ Μη διαθέσιμο\n"
-        f"- **Παγκράτι**: ❌ Μη διαθέσιμο"
+    if qty == 0:
+        return (
+            f"- **Αμπελόκηποι**:  Μη διαθέσιμο\n"
+            f"- **Παγκράτι**: Μη διαθέσιμο"
     )
 
 
@@ -341,7 +342,7 @@ def check_order(order_id: str) -> str:
     if not ORDER_STATUS_KEY:
         return (
             "[ORDER_API_NOT_CONFIGURED] Το σύστημα παρακολούθησης παραγγελιών δεν έχει ρυθμιστεί. "
-            "Επικοινωνήστε μαζί μας: ☎️ 210 64 68 315"
+            "Επικοινωνήστε μαζί μας: 210 64 68 315"
         )
 
     headers = {
