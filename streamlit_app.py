@@ -11,7 +11,7 @@ if 'messages' not in st.session_state:
 
 for msg in st.session_state.messages:
     with st.chat_message(msg['role']):
-        st.write(msg['content'])
+        st.markdown(msg['content'])
 
 if prompt := st.chat_input('Γράψε την ερώτησή σου...'):
     st.session_state.messages.append({'role': 'user', 'content': prompt})
@@ -29,7 +29,7 @@ if prompt := st.chat_input('Γράψε την ερώτησή σου...'):
     with st.chat_message('assistant'):
         with st.spinner('Σκέφτομαι...'):
             response = ask(prompt, chat_history=history)
-        st.write(response['answer'])
+        st.markdown(response['answer'])
 
     st.session_state.messages.append({
         'role': 'assistant',

@@ -89,11 +89,11 @@ def _store_stock_line(store_name: str, qty: int) -> str:
     phone = info.get("phone", "")
     loc   = info.get("locative", f"στο {store_name}")
     if qty > 2:
-        return f"✅ Υπάρχει {loc}"
+        return f"Υπάρχει {loc}"
     if qty in (1, 2):
         phone_str = f" — καλέστε για κράτηση: {phone}" if phone else ""
-        return f"⚠️ Περιορισμένο απόθεμα {loc}{phone_str}"
-    return f"❌ Δεν υπάρχει {loc}"
+        return f"Περιορισμένο απόθεμα {loc}{phone_str}"
+    return f"Δεν υπάρχει {loc}"
 
 
 def _fetch_with_primp_or_requests(url, params, headers, timeout=15):
@@ -118,13 +118,13 @@ def _format_per_store(qty_store: int, qty_branch: int) -> str:
 def _format_total_stock(qty: int) -> str:
     """Fallback when only total qty is known (no per-store breakdown)."""
     if qty > 2:
-        return "✅ Υπάρχει στα καταστήματά μας"
+        return "Υπάρχει στα καταστήματά μας"
     if qty in (1, 2):
-        lines = ["⚠️ Περιορισμένο απόθεμα — καλέστε για επιβεβαίωση:"]
+        lines = ["Περιορισμένο απόθεμα — καλέστε για επιβεβαίωση:"]
         for info in STORE_INFO.values():
             lines.append(f"    📍 {info['locative'].replace('στο ','').replace('στους ','')}: {info['phone']}")
         return "\n  ".join(lines)
-    return "❌ Εξαντλημένο"
+    return "Εξαντλημένο"
 
 
 def check_stock(product_name: str) -> str:
@@ -331,8 +331,11 @@ _SYSTEM = """Είσαι ο βοηθός εξυπηρέτησης πελατών 
 
 ## Γενικοί κανόνες
 - Απάντα στη γλώσσα που χρησιμοποιεί ο πελάτης (Ελληνικά αν γράψει Ελληνικά, Αγγλικά αν γράψει Αγγλικά).
-- Όταν αναφέρεις προϊόν, πάντα συμπέριλαβε το link του.
+- Όταν αναφέρεις προϊόν ή σελίδα, πάντα συμπέριλαβε το link σε μορφή Markdown: [κείμενο](url). ΠΟΤΕ μην γράφεις link χωρίς URL.
 - Παραπέμψε στο support (info@microcenter.gr) μόνο αν δεν μπορείς να βοηθήσεις με κανένα εργαλείο.
+
+## Ωράριο & καταστήματα
+- Για ερωτήσεις σχετικά με ωράριο λειτουργίας, τοποθεσία καταστημάτων ή τηλέφωνα, χρησιμοποίησε search_knowledge_base με query "καταστήματα ωράριο λειτουργίας".
 
 ## Ερωτήσεις διαθεσιμότητας προϊόντων
 Για κάθε ερώτηση σχετικά με προϊόν:
