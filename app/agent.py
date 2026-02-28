@@ -219,9 +219,72 @@ def suggest_by_budget(budget: float, category: str = "") -> str:
     return f"Προϊόντα έως {budget}€:\n" + "\n".join(found[:8])
 
 
+def browse_category(keyword: str) -> str:
+    """Search products using a short category keyword (e.g. 'λουράκι', 'θήκη', 'φορτιστής').
+    Returns up to 15 products. Tries custom per-store API first, then journal3/search."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Language": "el-GR,el;q=0.9,en;q=0.8",
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer": f"{OPENCART_URL}/",
+    }
+
+    token = _get_api_token()
+    if token:
+        status, text = _fetch_with_primp_or_requests(
+            f"{OPENCART_URL}/index.php",
+            {"route": "api/stock_locations", "api_token": token, "search": keyword, "limit": 15},
+            headers,
+        )
+        print(f"[browse_category:per-store] status={status} preview={text[:150]}")
+        try:
+            data = json.loads(text)
+            if data.get("status") == "success" and data.get("products"):
+                results = []
+                for p in data["products"][:15]:
+                    stock_str = _format_per_store(
+                        int(p.get("qty_store", 0)),
+                        int(p.get("qty_branch", 0)),
+                    )
+                    results.append(
+                        f"**{p['name']}** — {p['price']}\n  {stock_str}\n  {p.get('href', '')}"
+                    )
+                return "\n\n".join(results)
+        except Exception:
+            pass
+
+    # Fallback: journal3/search
+    status, text = _fetch_with_primp_or_requests(
+        f"{OPENCART_URL}/index.php",
+        {"route": "journal3/search", "search": keyword, "limit": 15},
+        headers,
+    )
+    print(f"[browse_category:journal3] status={status} preview={text[:150]}")
+    try:
+        data = json.loads(text)
+    except Exception as e:
+        print(f"[browse_category] JSON error: {e}")
+        return "[API_UNAVAILABLE] Could not reach store."
+
+    if data.get("status") != "success" or not data.get("response"):
+        return f"Δεν βρέθηκαν προϊόντα για '{keyword}'."
+
+    results = []
+    for p in data["response"][:15]:
+        qty = int(p.get("quantity", 0))
+        stock_str = _format_total_stock(qty)
+        results.append(
+            f"**{p.get('name', '?')}** — {p.get('price', '—')}\n  {stock_str}\n  {p.get('href', '')}"
+        )
+    return "\n\n".join(results)
+
+
 def _call_tool(name: str, args: dict) -> str:
     if name == "search_knowledge_base":
         return search_knowledge_base(args["query"])
+    if name == "browse_category":
+        return browse_category(args["keyword"])
     if name == "check_stock":
         return check_stock(args["product_name"])
     if name == "search_web":
@@ -238,6 +301,27 @@ def _call_tool(name: str, args: dict) -> str:
 # ---------------------------------------------------------------------------
 
 _TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "browse_category",
+            "description": (
+                "Browse products by category using a SHORT Greek keyword. "
+                "Use this FIRST for general category queries (e.g. 'λουράκι', 'θήκη', 'φορτιστής', 'καλώδιο'). "
+                "Always use the SINGULAR form of the keyword. Returns up to 15 products with stock and price."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "keyword": {
+                        "type": "string",
+                        "description": "Short singular keyword in Greek, e.g. 'λουράκι', 'θήκη iPhone', 'φορτιστής MacBook'",
+                    }
+                },
+                "required": ["keyword"],
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -337,10 +421,15 @@ _SYSTEM = """Είσαι ο βοηθός εξυπηρέτησης πελατών 
 ## Ωράριο & καταστήματα
 - Για ερωτήσεις σχετικά με ωράριο λειτουργίας, τοποθεσία καταστημάτων ή τηλέφωνα, χρησιμοποίησε search_knowledge_base με query "καταστήματα ωράριο λειτουργίας".
 
-## Ερωτήσεις διαθεσιμότητας προϊόντων
-Για κάθε ερώτηση σχετικά με προϊόν:
-1. Κάλεσε search_knowledge_base για να ψάξεις τη βάση γνώσεων.
-2. Κάλεσε ΠΑΝΤΑ check_stock για πραγματικό απόθεμα και τιμή — ακόμα κι αν το search_knowledge_base βρήκε αποτελέσματα.
+## Αναζήτηση προϊόντων — ΥΠΟΧΡΕΩΤΙΚΗ σειρά
+
+### Αν ο πελάτης ρωτά για ΚΑΤΗΓΟΡΙΑ (π.χ. "λουράκια", "θήκες", "φορτιστές", "καλώδια"):
+1. Κάλεσε **browse_category** με τη ΜΟΝΑΔΙΚΗ ΜΟΡΦΗ της λέξης-κλειδί (π.χ. "λουράκι" όχι "λουράκια", "θήκη" όχι "θήκες").
+2. Αν χρειάζεσαι πρόσθετες πληροφορίες για συγκεκριμένο προϊόν, κάλεσε check_stock.
+
+### Αν ο πελάτης ρωτά για ΣΥΓΚΕΚΡΙΜΕΝΟ προϊόν (π.χ. "Apple Watch band midnight 44mm"):
+1. Κάλεσε **browse_category** με το βασικό keyword (π.χ. "λουράκι Apple Watch").
+2. Αν δεν βρεθεί, κάλεσε **check_stock** με το πλήρες όνομα προϊόντος.
 
 ## Ερωτήσεις συμβατότητας ή προδιαγραφών (π.χ. "φορτιστής για MacBook", "θήκη για iPhone 16", "καλώδιο για Samsung")
 Ακολούθησε ΠΑΝΤΑ αυτά τα 3 βήματα με τη σειρά:
