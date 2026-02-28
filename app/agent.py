@@ -335,6 +335,95 @@ def browse_category(keyword: str) -> str:
     return "\n\n".join(results) + footer
 
 
+def check_order(order_id: str) -> str:
+    """Look up an order by ID and return its current status."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer": f"{OPENCART_URL}/",
+    }
+
+    data = {}
+    for attempt in range(2):
+        token = _get_api_token(force_refresh=(attempt > 0))
+        if not token:
+            break
+
+        status_code, text = _fetch_with_primp_or_requests(
+            f"{OPENCART_URL}/index.php",
+            {"route": "api/order/info", "api_token": token, "order_id": order_id},
+            headers,
+        )
+        print(f"[check_order attempt={attempt}] status={status_code} preview={text[:300]}")
+
+        try:
+            data = json.loads(text)
+            if data.get("error") and attempt == 0:
+                print(f"[check_order] API error: {data} — refreshing token")
+                continue
+            break
+        except Exception as e:
+            print(f"[check_order] JSON error: {e} — raw: {text[:200]}")
+            return f"Δεν μπόρεσα να αναζητήσω την παραγγελία #{order_id}."
+
+    if not data or not data.get("order_id"):
+        return (
+            f"Δεν βρέθηκε παραγγελία με αριθμό **#{order_id}**.\n"
+            "Ελέγξτε τον αριθμό ή επικοινωνήστε μαζί μας:\n"
+            "- ☎️ Αμπελόκηποι: 210 64 68 315\n"
+            "- ☎️ Παγκράτι: 210 220 1684 / 211 111 5982"
+        )
+
+    order_status = (data.get("order_status") or "").strip()
+    date_added   = data.get("date_added", "")
+    total        = data.get("total", "")
+    tracking     = (data.get("tracking") or "").strip()
+
+    STATUS_MESSAGES = {
+        "Καταχώρηση Παραγγελίας": (
+            "📋 **Σε επεξεργασία** — Η παραγγελία σας έχει καταχωρηθεί και βρίσκεται σε επεξεργασία.\n"
+            "Δεν έχει αποσταλεί ακόμα — θα ενημερωθείτε μόλις αποσταλεί."
+        ),
+        "Καλάθι": (
+            "📋 **Σε επεξεργασία** — Η παραγγελία σας έχει καταχωρηθεί και βρίσκεται σε επεξεργασία.\n"
+            "Δεν έχει αποσταλεί ακόμα — θα ενημερωθείτε μόλις αποσταλεί."
+        ),
+        "Παραλαβή από Παγκράτι": (
+            "🏪 **Έτοιμη για παραλαβή** — Μπορείτε να παραλάβετε την παραγγελία σας από το κατάστημα **Παγκράτι**.\n"
+            "📍 Υμηττού 83, Αθήνα 11633\n"
+            "☎️ 210 220 1684 / 211 111 5982\n"
+            "🕐 Δευτ–Τετ 09:00–15:00 | Τρ–Πέμ–Παρ 09:00–14:30 & 17:00–21:00 | Σαβ 09:00–15:00"
+        ),
+        "Box Now": "📦 **Απεστάλη μέσω Box Now**",
+        "Ολοκληρωμένη": "✅ **Ολοκληρωμένη** — Η παραγγελία σας έχει αποσταλεί.",
+    }
+
+    status_msg = STATUS_MESSAGES.get(order_status, f"📌 Κατάσταση: **{order_status}**")
+
+    # For shipped orders, add tracking info
+    if order_status in ("Box Now", "Ολοκληρωμένη"):
+        if tracking:
+            status_msg += (
+                f"\n📦 Αριθμός αποστολής: `{tracking}`\n"
+                f"[Παρακολούθηση στο Box Now →](https://track.boxnow.gr/{tracking})"
+            )
+        else:
+            status_msg += (
+                "\n\nΓια τον αριθμό παρακολούθησης επικοινωνήστε μαζί μας:\n"
+                "☎️ 210 64 68 315 (Αμπελόκηποι) | 210 220 1684 (Παγκράτι)"
+            )
+
+    lines = [f"**Παραγγελία #{order_id}**"]
+    if date_added:
+        lines.append(f"📅 Ημερομηνία: {date_added}")
+    if total:
+        lines.append(f"💰 Σύνολο: {total}")
+    lines.append("")
+    lines.append(status_msg)
+    return "\n".join(lines)
+
+
 def _call_tool(name: str, args: dict) -> str:
     if name == "search_knowledge_base":
         return search_knowledge_base(args["query"])
@@ -342,6 +431,8 @@ def _call_tool(name: str, args: dict) -> str:
         return browse_category(args["keyword"])
     if name == "check_stock":
         return check_stock(args["product_name"])
+    if name == "check_order":
+        return check_order(args["order_id"])
     if name == "search_web":
         return search_web(args["query"])
     if name == "compare_products":
@@ -411,6 +502,26 @@ _TOOLS = [
                     }
                 },
                 "required": ["product_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_order",
+            "description": (
+                "Check the status of a customer order by order ID. "
+                "Use this when a customer asks about their order, where it is, or if it has been shipped."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_id": {
+                        "type": "string",
+                        "description": "The order ID number provided by the customer",
+                    }
+                },
+                "required": ["order_id"],
             },
         },
     },
@@ -509,6 +620,17 @@ _SYSTEM = """Είσαι ο βοηθός εξυπηρέτησης πελατών 
 1. search_web → βρες τις προδιαγραφές της συσκευής (π.χ. "MacBook Air 2025 charging specs USB-C watt")
 2. browse_category ή check_stock → βρες τα διαθέσιμα προϊόντα στο κατάστημα
 3. Συνδύασε τα αποτελέσματα: εξήγησε ΓΙΑΤΙ το προϊόν είναι συμβατό.
+
+## Παρακολούθηση παραγγελίας
+Όταν ο πελάτης ρωτά "πού είναι η παραγγελία μου", "έχει αποσταλεί η παραγγελία;" ή παρόμοιο:
+1. Αν δεν έχει δώσει αριθμό παραγγελίας, **ρώτα τον πρώτα**: "Μπορείτε να μου δώσετε τον αριθμό παραγγελίας σας;"
+2. Μόλις έχεις τον αριθμό, κάλεσε **check_order** με αυτόν.
+3. Παρουσίασε το αποτέλεσμα αυτούσιο — ΜΗΝ το συνοψίσεις.
+
+Οι πιθανές καταστάσεις παραγγελίας είναι:
+- **Καταχώρηση Παραγγελίας** ή **Καλάθι** → δεν έχει αποσταλεί ακόμα
+- **Παραλαβή από Παγκράτι** → ο πελάτης θα παραλάβει από το κατάστημα
+- **Box Now** ή **Ολοκληρωμένη** → έχει αποσταλεί, υπάρχει αριθμός παρακολούθησης
 
 ## Άλλα εργαλεία
 - compare_products: όταν ο πελάτης θέλει σύγκριση δύο προϊόντων.
