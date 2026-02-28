@@ -19,6 +19,7 @@ client = OpenAI()
 OPENCART_URL = os.getenv("OPENCART_URL", "https://www.microcenter.gr").rstrip("/")
 OPENCART_API_KEY = os.getenv("OPENCART_API_KEY", "")
 OPENCART_API_USERNAME = os.getenv("OPENCART_API_USERNAME", "default")
+ORDER_STATUS_KEY = os.getenv("ORDER_STATUS_KEY", "")
 
 STORE_INFO = {
     "Αμπελόκηποι": {"phone": "210 64 68 315",             "locative": "στους Αμπελόκηπους"},
@@ -336,36 +337,30 @@ def browse_category(keyword: str) -> str:
 
 
 def check_order(order_id: str) -> str:
-    """Look up an order by ID and return its current status."""
+    """Look up an order by ID using the custom order_status.php endpoint."""
+    if not ORDER_STATUS_KEY:
+        return (
+            "[ORDER_API_NOT_CONFIGURED] Το σύστημα παρακολούθησης παραγγελιών δεν έχει ρυθμιστεί. "
+            "Επικοινωνήστε μαζί μας: ☎️ 210 64 68 315"
+        )
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
         "Accept": "application/json",
-        "X-Requested-With": "XMLHttpRequest",
-        "Referer": f"{OPENCART_URL}/",
     }
 
-    data = {}
-    for attempt in range(2):
-        token = _get_api_token(force_refresh=(attempt > 0))
-        if not token:
-            break
+    status_code, text = _fetch_with_primp_or_requests(
+        f"{OPENCART_URL}/order_status.php",
+        {"key": ORDER_STATUS_KEY, "order_id": order_id},
+        headers,
+    )
+    print(f"[check_order] status={status_code} preview={text[:300]}")
 
-        status_code, text = _fetch_with_primp_or_requests(
-            f"{OPENCART_URL}/index.php",
-            {"route": "api/order/info", "api_token": token, "order_id": order_id},
-            headers,
-        )
-        print(f"[check_order attempt={attempt}] status={status_code} preview={text[:300]}")
-
-        try:
-            data = json.loads(text)
-            if data.get("error") and attempt == 0:
-                print(f"[check_order] API error: {data} — refreshing token")
-                continue
-            break
-        except Exception as e:
-            print(f"[check_order] JSON error: {e} — raw: {text[:200]}")
-            return f"Δεν μπόρεσα να αναζητήσω την παραγγελία #{order_id}."
+    try:
+        data = json.loads(text)
+    except Exception as e:
+        print(f"[check_order] JSON error: {e} — raw: {text[:200]}")
+        return f"Δεν μπόρεσα να αναζητήσω την παραγγελία #{order_id}."
 
     if not data or not data.get("order_id"):
         return (
