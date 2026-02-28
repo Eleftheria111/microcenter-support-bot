@@ -128,16 +128,17 @@ def _format_per_store(qty_store: int, qty_branch: int) -> str:
 
 
 def _format_total_stock(qty: int) -> str:
-    """Fallback when only total qty is known (no per-store breakdown)."""
-    if qty > 2:
+    """Fallback when only total qty is known (no per-store breakdown).
+    Threshold >5 for 'available' because with 2 stores, qty=4 could mean 3+1 (one limited)."""
+    if qty > 5:
         return (
             f"- **Αμπελόκηποι**: ✅ Διαθέσιμο\n"
             f"- **Παγκράτι**: ✅ Διαθέσιμο"
         )
-    if qty in (1, 2):
+    if qty >= 1:
         return (
-            f"- **Αμπελόκηποι**: ⚠️ Περιορισμένο απόθεμα — καλέστε: 210 64 68 315\n"
-            f"- **Παγκράτι**: ⚠️ Περιορισμένο απόθεμα — καλέστε: 210 220 1684 ή 211 111 5982"
+            f"- **Αμπελόκηποι**: ⚠️ Περιορισμένο απόθεμα — καλέστε για επιβεβαίωση: 210 64 68 315\n"
+            f"- **Παγκράτι**: ⚠️ Περιορισμένο απόθεμα — καλέστε για επιβεβαίωση: 210 220 1684 ή 211 111 5982"
         )
     return (
         f"- **Αμπελόκηποι**: ❌ Μη διαθέσιμο\n"
